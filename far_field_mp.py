@@ -52,6 +52,8 @@ class FarFieldSim():
 
         self.Npts = len(self.x_ap)
 
+        self.out = np.zeros((3, self.N_scan * self.N_scan * 4), dtype=complex)
+
     def find_beam(self, i_ang, j_ang):
         de_az = (i_ang) * self.de_ang
         de_el = (j_ang) * self.de_ang
@@ -105,15 +107,21 @@ class FarFieldSim():
         return [out0, out1, out2]
 
     def output(self):
-        range_scan = [(i,j) for i in range(-self.N_scan, self.N_scan, 1) for j in range(-self.N_scan, self.N_scan, 1)]
-        print()
-        pool = mp.Pool(processes=mp.cpu_count())
-        result = pool.starmap(self.find_beam, range_scan)
-        pool.close()
-        pool.join()
+        if self.N_scan > 55: # a threshold to use parallelism (it's a empirical number tested with Ryzen 5 3600)
+            range_scan = [(i,j) for i in range(-self.N_scan, self.N_scan, 1) for j in range(-self.N_scan, self.N_scan, 1)]
+            pool = mp.Pool(processes=mp.cpu_count())
+            result = pool.starmap(self.find_beam, range_scan)
+            pool.close()
+            pool.join()
+        else:
+            result = []
+            for ii in range(self.N_scan):
+                for jj in range(self.N_scan):
+                    result.append(self.find_beam(ii, jj))
 
-        return np.array(result).transpose()
-
+        self.out = np.array(result).transpose()
+        return self.out
+ 
 # utility function
 def far_field_sim(ap_field, msmt_geo, rx):
     FFS = FarFieldSim(ap_field, msmt_geo, rx)
@@ -177,5 +185,5 @@ if __name__ == "__main__":
     beam = ff.far_field_sim(ap_field, tele_geo_t, None)
     print(f"Processing time : {time.time()-time_start}") 
 
-    assert beam.all() == beam_mp.all(), \
-            "Inconsistency found. Please contact Tung at ctcheung@uchicago.edu for bug-fixing"
+    if not np.allclose(beam, beam_mp, rtol=1e-12, atol=1e-12):
+        print("Inconsistency found. Please contact Tung at ctcheung@uchicago.edu for bug-fixing")
